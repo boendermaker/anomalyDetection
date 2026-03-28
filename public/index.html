@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>Motor AI: Training & Detection</title>
+    <script src="https://cdn.amcharts.com/lib/5/index.js"></script>
+    <script src="https://cdn.amcharts.com/lib/5/xy.js"></script>
+    <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 20px;
+            background: #f0f2f5;
+            color: #333;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+            border: 1px solid #ddd;
+        }
+
+        #chart_train,
+        #chart_detect {
+            width: 100%;
+            height: 400px;
+        }
+
+        .controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #007bff;
+        }
+
+        /* Dialog Styling verbessert */
+        #labelDialog {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 10px 50px rgba(0, 0, 0, 0.4);
+            z-index: 100000;
+            border: 2px solid #007bff;
+            text-align: center;
+        }
+
+        button {
+            padding: 10px 16px;
+            cursor: pointer;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            font-weight: bold;
+        }
+
+        button:hover {
+            opacity: 0.9;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="chart-container">
+        <h2>1. Training & Labeling</h2>
+        <div class="controls">
+            <button onclick="fetchTrainData()">Daten generieren</button>
+            <button style="background: #28a745;" onclick="sendToTraining()">Modell trainieren</button>
+        </div>
+        <div id="chart_train"></div>
+    </div>
+
+    <div class="chart-container">
+        <h2>2. Anomalie-Erkennung (Live Test)</h2>
+        <div class="controls">
+            <button id="btnDetect" style="background: #6f42c1;" onclick="runDetection()">Analyse starten</button>
+        </div>
+        <div id="chart_detect"></div>
+    </div>
+
+    <div id="labelDialog">
+        <h3>Bereich klassifizieren</h3>
+        <p>Was stellt der markierte Bereich dar?</p>
+        <button onclick="setLabel(0)">Normaler Betrieb (0)</button>
+        <button style="background: #dc3545;" onclick="setLabel(1)">Anomalie / Fehler (1)</button>
+        <hr>
+        <button style="background: #6c757d;" onclick="closeDialog()">Abbrechen</button>
+    </div>
+
+    <script>
+        let rootT, rootD, trainSeries, detectSeries, predictSeries, trainXAxis, detectXAxis;
+        let trainData = [], selectedRange = { start: 0, end: 0 };
+
+        am5.ready(function () {
+            // --- CHART 1: TRAINING ---
+            rootT = am5.Root.new("chart_train");
+            rootT.setThemes([am5themes_Animated.new(rootT)]);
+
+            // Chart Behavior auf Default lassen, damit Cursor die Selection übernimmt
+            let chartT = rootT.container.children.push(am5xy.XYChart.new(rootT, {
+                panX: true, wheelX: "panX", pinchZoomX: true
+            }));
+
+            trainXAxis = chartT.xAxes.push(am5xy.DateAxis.new(rootT, {
+                baseInterval: { timeUnit: "second", count: 1 },
+                renderer: am5xy.AxisRendererX.new(rootT, {})
+            }));
+            let yAxisT = chartT.yAxes.push(am5xy.ValueAxis.new(rootT, {
+                renderer: am5xy.AxisRendererY.new(rootT, {})
+            }));
+
+            trainSeries = chartT.series.push(am5xy.LineSeries.new(rootT, {
+                xAxis: trainXAxis, yAxis: yAxisT, valueYField: "current", valueXField: "timestamp", stroke: am5.color(0x007bff)
+            }));
+
+            // Bullets zur Visualisierung der Labels
+            trainSeries.bullets.push(() => am5.Bullet.new(rootT, {
+                sprite: am5.Circle.new(rootT, { radius: 4, templateField: "bulletSettings" })
+            }));
+
+            // WICHTIG: Cursor-Konfiguration für Selection
+            let cursorT = chartT.set("cursor", am5xy.XYCursor.new(rootT, {
+                behavior: "selectX"
+            }));
+
+            cursorT.events.on("selectended", () => {
+                let xRange = cursorT.getSelection().x;
+                if (xRange) {
+                    // Umrechnung der relativen Position in Timestamps
+                    selectedRange.start = trainXAxis.positionToValue(xRange.start);
+                    selectedRange.end = trainXAxis.positionToValue(xRange.end);
+                    document.getElementById("labelDialog").style.display = "block";
+                    // Auswahl im Chart aufheben (visuell)
+                    setTimeout(() => cursorT.selection.hide(), 500);
+                }
+            });
+
+            // --- CHART 2: DETECTION ---
+            rootD = am5.Root.new("chart_detect");
+            rootD.setThemes([am5themes_Animated.new(rootD)]);
+            let chartD = rootD.container.children.push(am5xy.XYChart.new(rootD, { panX: true, wheelX: "panX" }));
+
+            detectXAxis = chartD.xAxes.push(am5xy.DateAxis.new(rootD, { baseInterval: { timeUnit: "second", count: 1 }, renderer: am5xy.AxisRendererX.new(rootD, {}) }));
+            let yAxisD = chartD.yAxes.push(am5xy.ValueAxis.new(rootD, { renderer: am5xy.AxisRendererY.new(rootD, {}) }));
+
+            detectSeries = chartD.series.push(am5xy.LineSeries.new(rootD, { name: "Motorstrom", xAxis: detectXAxis, yAxis: yAxisD, valueYField: "current", valueXField: "timestamp", stroke: am5.color(0x6c757d) }));
+            predictSeries = chartD.series.push(am5xy.LineSeries.new(rootD, { name: "KI-Alarm", xAxis: detectXAxis, yAxis: yAxisD, valueYField: "prob", valueXField: "timestamp", stroke: am5.color(0xdc3545), fill: am5.color(0xdc3545) }));
+            predictSeries.fills.template.setAll({ visible: true, fillOpacity: 0.3 });
+        });
+
+        // LOGIK
+        async function fetchTrainData() {
+            const res = await (await fetch('/api/generate')).json();
+            trainData = res.data.map(d => ({
+                ...d,
+                bulletSettings: { fill: am5.color(d.label === 1 ? 0xdc3545 : 0x007bff) }
+            }));
+            trainSeries.data.setAll(trainData);
+        }
+
+        function setLabel(type) {
+            const start = Math.min(selectedRange.start, selectedRange.end);
+            const end = Math.max(selectedRange.start, selectedRange.end);
+
+            trainData.forEach(d => {
+                if (d.timestamp >= start && d.timestamp <= end) {
+                    d.label = type;
+                    // Farbe der Punkte sofort aktualisieren
+                    d.bulletSettings = { fill: am5.color(type === 1 ? 0xdc3545 : 0x007bff) };
+                }
+            });
+            trainSeries.data.setAll(trainData);
+            closeDialog();
+        }
+
+        function closeDialog() { document.getElementById("labelDialog").style.display = "none"; }
+
+        async function sendToTraining() {
+            const res = await fetch('/api/train', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rawData: trainData })
+            });
+            const status = await res.json();
+            if (status.success) alert("Training abgeschlossen!");
+            else alert("Fehler: " + status.error);
+        }
+
+        async function runDetection() {
+            const genRes = await (await fetch('/api/rndgenerate')).json();
+            const newData = genRes.data;
+
+            const analyzeRes = await (await fetch('/api/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ currentData: newData })
+            })).json();
+
+            if (analyzeRes.success) {
+                const mappedDetect = newData.map((d, i) => ({
+                    timestamp: d.timestamp,
+                    current: d.current,
+                    // Wenn Wahrscheinlichkeit > 50%, zeichne die rote Fläche ein
+                    prob: analyzeRes.predictions[i] > 0.5 ? d.current : 0
+                }));
+
+                detectSeries.data.setAll(mappedDetect);
+                predictSeries.data.setAll(mappedDetect);
+            }
+        }
+    </script>
+</body>
+
+</html>
