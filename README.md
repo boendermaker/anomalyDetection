@@ -17,7 +17,7 @@ By training on both features, the model filters out "False Positives" during the
 ## 🛠 Features
 
 * **Dynamic Synthetic Data**: Generates realistic motor curves including start-up (exponential decay), steady-state, and coast-down phases with randomized phase lengths.
-* **Interactive Labeling**: A web-based UI to classify data points and "teach" the AI.
+* **Data is Prelabeled**: You can modify the generation of data with prelabeled Datapoints in DataGenerator Class
 * **On-the-Fly Training**: Trains a 3-layer Neural Network directly in the Node.js backend using TensorFlow.js.
 * **Live Inference**: Visualizes probability overlays (heatmaps) over the motor curve in real-time.
 
@@ -47,4 +47,7 @@ The easiest way to run this project is using Docker. This ensures all C++ bindin
 Clone the repo and run:
 
 ```bash
-docker-compose up --build
+docker compose up -d --build
+docker compose restart tf-app (When you made changes)
+
+Locate your browser to http://localhost:3000
