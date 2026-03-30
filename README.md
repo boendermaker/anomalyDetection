@@ -2,7 +2,7 @@
 
 This repository contains a **Contextual Anomaly Detection** system for industrial motor monitoring. Unlike traditional static threshold monitors, this AI-driven solution distinguishes between expected high-current events (like start-up sequences) and actual mechanical faults by analyzing amperage in relation to its operational timeframe (`step`).
 
-![AnomalyDetection](https://www.boendermaker.de/github/aianomalydetection.gif?)
+![AnomalyDetection](https://www.boendermaker.de/github/anomalydetection.gif?)
 
 ## 🚀 The Core Concept
 
