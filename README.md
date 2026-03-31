@@ -2,6 +2,8 @@
 
 This repository contains a **Contextual Anomaly Detection** system for industrial motor monitoring. Unlike traditional static threshold monitors, this AI-driven solution distinguishes between expected high-current events (like start-up sequences) and actual mechanical faults by analyzing amperage in relation to its operational timeframe (`step`).
 
+![AnomalyDetection](https://www.boendermaker.de/github/anomalydetection.gif?)
+
 ## 🚀 The Core Concept
 
 In industrial environments, a motor's "Normal" state changes over time. A 20A current is perfectly fine during the first 5 seconds (Start-up), but the same 20A could indicate a critical failure if it occurs during steady-state operation.
