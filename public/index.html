@@ -8,6 +8,20 @@
     <script src="https://cdn.amcharts.com/lib/5/xy.js"></script>
     <script src="https://cdn.amcharts.com/lib/5/themes/Animated.js"></script>
     <style>
+        @keyframes rotate-loop {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .rotate-loop {
+            animation: rotate-loop .5s linear infinite;
+        }
+
         body {
             font-family: sans-serif;
             padding: 20px;
@@ -84,7 +98,11 @@
         <h2>1. Training & Labeling</h2>
         <div class="controls">
             <button onclick="fetchTrainData()">Daten generieren</button>
-            <button style="background: #28a745;" onclick="sendToTraining()">Modell trainieren</button>
+            <button style="background: #28a745;" onclick="sendToTraining()">
+                <span>Modell trainieren</span>&nbsp;&nbsp;<div id="spinner" class="rotate-loop" style="display: none;">
+                    █
+                </div>
+            </button>
         </div>
         <div id="chart_train"></div>
     </div>
@@ -95,15 +113,6 @@
             <button id="btnDetect" style="background: #6f42c1;" onclick="runDetection()">Analyse starten</button>
         </div>
         <div id="chart_detect"></div>
-    </div>
-
-    <div id="labelDialog">
-        <h3>Bereich klassifizieren</h3>
-        <p>Was stellt der markierte Bereich dar?</p>
-        <button onclick="setLabel(0)">Normaler Betrieb (0)</button>
-        <button style="background: #dc3545;" onclick="setLabel(1)">Anomalie / Fehler (1)</button>
-        <hr>
-        <button style="background: #6c757d;" onclick="closeDialog()">Abbrechen</button>
     </div>
 
     <script>
@@ -117,7 +126,7 @@
 
             // Chart Behavior auf Default lassen, damit Cursor die Selection übernimmt
             let chartT = rootT.container.children.push(am5xy.XYChart.new(rootT, {
-                panX: true, wheelX: "panX", pinchZoomX: true
+                panX: false, wheelY: 'zoomX', pinchZoomX: false
             }));
 
             trainXAxis = chartT.xAxes.push(am5xy.DateAxis.new(rootT, {
@@ -138,26 +147,14 @@
             }));
 
             // WICHTIG: Cursor-Konfiguration für Selection
-            let cursorT = chartT.set("cursor", am5xy.XYCursor.new(rootT, {
-                behavior: "selectX"
+            let cursorT = chartT.set('cursor', am5xy.XYCursor.new(rootT, {
+                behavior: "zoomX"
             }));
-
-            cursorT.events.on("selectended", () => {
-                let xRange = cursorT.getSelection().x;
-                if (xRange) {
-                    // Umrechnung der relativen Position in Timestamps
-                    selectedRange.start = trainXAxis.positionToValue(xRange.start);
-                    selectedRange.end = trainXAxis.positionToValue(xRange.end);
-                    document.getElementById("labelDialog").style.display = "block";
-                    // Auswahl im Chart aufheben (visuell)
-                    setTimeout(() => cursorT.selection.hide(), 500);
-                }
-            });
 
             // --- CHART 2: DETECTION ---
             rootD = am5.Root.new("chart_detect");
             rootD.setThemes([am5themes_Animated.new(rootD)]);
-            let chartD = rootD.container.children.push(am5xy.XYChart.new(rootD, { panX: true, wheelX: "panX" }));
+            let chartD = rootD.container.children.push(am5xy.XYChart.new(rootD, { panX: false, wheelY: 'zoomX' }));
 
             detectXAxis = chartD.xAxes.push(am5xy.DateAxis.new(rootD, { baseInterval: { timeUnit: "second", count: 1 }, renderer: am5xy.AxisRendererX.new(rootD, {}) }));
             let yAxisD = chartD.yAxes.push(am5xy.ValueAxis.new(rootD, { renderer: am5xy.AxisRendererY.new(rootD, {}) }));
@@ -177,32 +174,25 @@
             trainSeries.data.setAll(trainData);
         }
 
-        function setLabel(type) {
-            const start = Math.min(selectedRange.start, selectedRange.end);
-            const end = Math.max(selectedRange.start, selectedRange.end);
-
-            trainData.forEach(d => {
-                if (d.timestamp >= start && d.timestamp <= end) {
-                    d.label = type;
-                    // Farbe der Punkte sofort aktualisieren
-                    d.bulletSettings = { fill: am5.color(type === 1 ? 0xdc3545 : 0x007bff) };
-                }
-            });
-            trainSeries.data.setAll(trainData);
-            closeDialog();
-        }
-
-        function closeDialog() { document.getElementById("labelDialog").style.display = "none"; }
-
         async function sendToTraining() {
+
+            const elSpinner = document.getElementById('spinner');
+            elSpinner.style.display = 'inline-block';
+
             const res = await fetch('/api/train', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ rawData: trainData })
             });
             const status = await res.json();
-            if (status.success) alert("Training abgeschlossen!");
-            else alert("Fehler: " + status.error);
+
+            if (status.success) {
+                elSpinner.style.display = 'none';
+                alert('Training erfolgreich abgeschlossen!');
+            } else {
+                elSpinner.style.display = 'none';
+                alert('Fehler: ' + status.error);
+            }
         }
 
         async function runDetection() {
